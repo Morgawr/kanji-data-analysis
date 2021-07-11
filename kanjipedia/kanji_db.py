@@ -3,6 +3,7 @@
 from tinydb import TinyDB, Query, where
 
 from .entry import Entry as KanjiEntry
+from .entry import KanjiType
 
 
 class KanjiDB:
@@ -31,3 +32,21 @@ class KanjiDB:
 
     def SearchExactTypes(self, *types):
         return self.Search(self._kq.types.all(types))
+
+    def Stats(self):
+        """Prints statistics."""
+        total = len(self._db)
+        print(f"Number of entries: {total}")
+        shoukei = len(self.SearchTypes(KanjiType.SHOUKEI))
+        shiji = len(self.SearchTypes(KanjiType.SHIJI))
+        kaii = len(self.SearchTypes(KanjiType.KAII))
+        keisei = len(self.SearchTypes(KanjiType.KEISEI))
+        kaiikeisei = len(self.SearchExactTypes(KanjiType.KEISEI,
+                                               KanjiType.KAII))
+        def _percent(num1, num2):
+            return float(int(100 * (100 * float(num1) / float(num2)))) / 100.0
+        print(f"    象形: {shoukei} ({_percent(shoukei, total)}%)")
+        print(f"    指事: {shiji} ({_percent(shiji, total)}%)")
+        print(f"    会意: {kaii} ({_percent(kaii, total)}%)")
+        print(f"    形声: {keisei} ({_percent(keisei, total)}%)")
+        print(f"    会意形声: {kaiikeisei} ({_percent(kaiikeisei, total)}%)")

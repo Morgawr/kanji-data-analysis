@@ -16,10 +16,10 @@ _KP_BUSHU = "kanjiBushu"
 _KP_NARITACHI = "naritachi"
 _KP_KYUUJI = "旧字"
 _KP_SUB_KANJI = "subKanji"
-_KP_SAME_BUSHI = "sameBushiList"
+_KP_SAME_BUSHU = "sameBushuList"
 
 
-class KanjiType(enum.Enum):
+class KanjiType(str, enum.Enum):
     SHIJI = enum.auto()
     SHOUKEI = enum.auto()
     KAII = enum.auto()
@@ -48,15 +48,15 @@ class KanjiType(enum.Enum):
 class Entry:
 
     def __init__(self):
+        # TODO(morg): maybe also add meaning field
         self.origin_url = None
         self.kanji = None
         self.old_form = set() # Some kanji can have multiple old forms? wtf
-        self.meaning = None
         self.radical = None
         self.semantic_comp = set()
         self.phonetic_comp = None
         self.types = set()
-        self.raw_text = ""
+        #self.raw_text = ""
         self.related_kanji = set()
         self.onyomi = set()
         self.kunyomi = set()
@@ -67,8 +67,24 @@ class Entry:
         entry = Entry()
         entry.origin_url = url.strip()
         # Load HTML data into the entry
-        entry.raw_text = requests.get(entry.origin_url).text
-        entry._parse_HTML()
+        raw_text = requests.get(entry.origin_url).text
+        entry._parse_HTML(raw_text)
+        return entry
+
+    @staticmethod
+    def FromJSON(data):
+        entry = Entry()
+        entry.origin_url = data["origin_url"]
+        entry.kanji = data["kanji"]
+        entry.old_form = set(data["old_form"])
+        entry.radical = data["radical"]
+        entry.semantic_comp = set(data["semantic_comp"])
+        entry.phonetic_comp = data["phonetic_comp"]
+        entry.types = set([KanjiType(s) for s in data["types"]])
+        #entry.raw_text = data["raw_text"]
+        entry.related_kanji = set(data["related_kanji"])
+        entry.onyomi = set(data["onyomi"])
+        entry.kunyomi = set(data["kunyomi"])
         return entry
 
     def _parse_components(self, naritachi_tag):
@@ -77,6 +93,10 @@ class Entry:
         naritachi = re.sub(r"(（[^()]*）|\([^()]*\))", "",
                            str(naritachi_tag).split("<br/>")[-1])
         self.types = KanjiType.GetKanjiTypes(naritachi)
+
+        # Some kanji just won't want to cooperate, so we hardcode them
+        if self._handle_special_entries():
+            return
 
         if KanjiType.KEISEI in self.types:
             naritachi_ifu = ""
@@ -131,10 +151,66 @@ class Entry:
         for kun in re.sub(r"・", " ", list_tag[1].text).split(" "):
             self.kunyomi.add(str(kun).strip())
 
-    def _parse_HTML(self):
-        soup = BeautifulSoup(self.raw_text, "html.parser")
-        #print(self.origin_url, file=sys.stderr)
-        #print(self.raw_text)
+    def _handle_special_entries(self):
+        if self.kanji == "比":
+            self.semantic_comp.add("人")
+        elif self.kanji == "会":
+            self.semantic_comp.add("曾")
+            self.semantic_comp.add(
+                "<img src=\"/common/images/naritachi/500064.png\">")
+        elif self.kanji == "炎":
+            self.semantic_comp.add("火")
+        elif self.kanji == "並":
+            self.semantic_comp.add("立")
+        elif self.kanji == "歩":
+            self.semantic_comp.add("止")
+        elif self.kanji == "門":
+            self.semantic_comp.add("戸")
+        elif self.kanji == "林":
+            self.semantic_comp.add("木")
+        elif self.kanji == "乗":
+            self.semantic_comp.add("木")
+            self.semantic_comp.add("人")
+        elif self.kanji == "侵":
+            self.semantic_comp.add("人")
+            self.semantic_comp.add("帚")
+            self.semantic_comp.add("又")
+        elif self.kanji == "品":
+            self.semantic_comp.add("口")
+        elif self.kanji == "保":
+            self.semantic_comp.add("人")
+            self.semantic_comp.add(
+                "<img src=\"/common/images/naritachi/500065.png\">")
+        elif self.kanji == "要":
+            pass
+        elif self.kanji == "森":
+            self.semantic_comp.add("木")
+        elif self.kanji == "慨":
+            self.semantic_comp.add("心")
+            self.phonetic_comp = \
+                "<img src=\"/common/images/naritachi/2293.png\">"
+        elif self.kanji == "継":
+            self.semantic_comp.add("糸")
+            self.phonetic_comp = \
+                "<img src=\"/common/images/naritachi/2565.png\">"
+        elif self.kanji == "憬":
+            self.semantic_comp.add("心")
+            self.phonetic_comp = "景"
+        elif self.kanji == "錮":
+            self.semantic_comp.add("金")
+            self.phonetic_comp = "固"
+        else:
+            return False
+        return True
+
+    def _parse_related_kanji(self, bushu_list):
+        for i in bushu_list.text.replace("\n", ""):
+            if i == self.kanji:
+                pass
+            self.related_kanji.add(i)
+
+    def _parse_HTML(self, raw_text):
+        soup = BeautifulSoup(raw_text, "html.parser")
         # Save the kanji value
         self.kanji = soup.find("p", {"id": _KP_OYAJI}).text
         # And its old form (if any)
@@ -148,12 +224,52 @@ class Entry:
         self.radical = str(
                 soup.find("p", {"class": _KP_BUSHU}).next_element.next_element)
 
-        naritachi_tag = soup.find(
-                "li", {"class": _KP_NARITACHI}).contents[-2].contents[1]
-        self._parse_components(naritachi_tag)
+        # Some entries don't have naritachi data :(
+        try:
+            naritachi_tag = soup.find(
+                    "li", {"class": _KP_NARITACHI}).contents[-2]
+            # Hack for some pesky exceptions
+            if naritachi_tag == "\n":
+                naritachi_tag = soup.find(
+                        "li", {"class": _KP_NARITACHI}).contents[-1]
+            naritachi_tag = naritachi_tag.contents[1]
+            self._parse_components(naritachi_tag)
+        except AttributeError:
+            pass
 
         list_tag = soup.find_all(
                 "p", {"class": _KP_ONKUN_YOMI})
         self._parse_readings(list_tag)
 
-        #print(soup.prettify())
+        bushu_list = soup.find(
+                "ul", {"id": _KP_SAME_BUSHU})
+        self._parse_related_kanji(bushu_list)
+
+    def GetDataDict(self):
+        """Returns a built data dictionary of the entry for storage."""
+        kanji_dict = {
+            "kanji": self.kanji,
+            "origin_url": self.origin_url,
+            "old_form": list(self.old_form),
+            "radical": self.radical,
+            "semantic_comp": list(self.semantic_comp),
+            "phonetic_comp": self.phonetic_comp,
+            "types": list(self.types),
+            #"raw_text": self.raw_text,
+            "related_kanji": list(self.related_kanji),
+            "onyomi": list(self.onyomi),
+            "kunyomi": list(self.kunyomi),
+        }
+        return kanji_dict
+
+    def Display(self):
+        print("Kanji: " + self.kanji)
+        print(" Onyomi: " + str(self.onyomi))
+        print(" Kunyomi: " + str(self.kunyomi))
+        print(" Kanji old forms: " + str(self.old_form))
+        print(" Type: " + str(self.types))
+        print(" Radical: " + self.radical)
+        print(" Phonetic component: " + str(self.phonetic_comp))
+        print(" Semantic component: " + str(self.semantic_comp))
+        print(" Related kanji: " + str(self.related_kanji))
+
