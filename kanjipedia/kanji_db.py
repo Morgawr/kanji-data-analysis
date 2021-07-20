@@ -15,27 +15,100 @@ class KanjiDB:
     def AddOrUpdate(self, entry):
         """Given a kanji entry, adds or updates it in the database."""
         data = entry.GetDataDict()
-        self._db.upsert(data, self._kq.kanji == data["kanji"])
+        self._db.table("kanji").upsert(data, self._kq.kanji == data["kanji"])
+
+    def AddOrUpdateKunEntry(self, kun, kanji_list):
+        """Given a kunyomi and list of kanji, adds them to the database."""
+        self._db.table("kunyomi").upsert({
+            "kun": kun,
+            "kanji": kanji_list,
+        }, self._kq.kun == kun)
 
     def Remove(self, entry):
         """Given a kanji entry, removes it from the database."""
-        self._db.remove(where("kanji") == entry.kanji)
+        self._db.table("kanji").remove(where("kanji") == entry.kanji)
 
-    def Search(self, query):
+    def Search(self, table, query):
         results = []
-        for kanji in self._db.search(query):
-            results.append(KanjiEntry.FromJSON(kanji))
+        for data in self._db.table(table).search(query):
+            if table == "kanji":
+                results.append(KanjiEntry.FromJSON(data))
+            else:
+                results.append(data)
         return results
 
+    def GetKanji(self, kanji):
+        """Given a kanji name, finds the relevant entry (if any)."""
+        return self.Search("kanji", self._kq.kanji == kanji)[0]
+
+    def GetAllKanji(self):
+        """Returns a list of all kanji (just the kanji, not entity)."""
+        return [KanjiEntry.FromJSON(x).kanji
+                for x in self._db.table("kanji").all()]
+
+    def FindKunyomi(self, *readings):
+        """Given a list of kunyomi, finds all kanji that match all (if any).
+
+        Args:
+            *readings: list of str, all readings to test and find.
+
+        Returns:
+            A list of kanji Entities (not individual moji).
+        """
+        return self.Search("kanji", self._kq.kunyomi.all(readings))
+
+    def FindSingleKunyomi(self, reading, fast=True):
+        """Given a single kunyomi reading, get list of kanji (if any).
+
+        Args:
+            reading: str, the kunyomi reading.
+            fast: bool, if true, hits the cached pre-built database.
+
+        Returns:
+            List of individual moji (not Entries).
+        """
+        if fast:
+            result = self.Search("kunyomi", self._kq.kun == reading)
+            if result:
+                return result[0]["kanji"]
+            return []
+        else:
+            return [k.kanji for k in self.FindKunyomi(reading)]
+
+    def FindKanjiWithSharedPhonetic(self, kanji):
+        """Given an initial kanji, finds all kanji that share 音符 with it."""
+        kanji = self.GetKanji(kanji)
+        if not kanji.phonetic_comp:
+            return []
+        else:
+            return self.Search("kanji",
+                               self._kq.phonetic_comp == kanji.phonetic_comp)
+
+    def FindKanjiWithSharedSemantic(self, kanji):
+        """Given an initial kanji, finds all kanji that share 意符 with it."""
+        kanji = self.GetKanji(kanji)
+        if not kanji.semantic_comp:
+            return []
+        else:
+            results = {}
+            for sem in kanji.semantic_comp:
+                results[sem] = self.Search("kanji",
+                                           self._kq.semantic_comp.any(sem))
+            return results
+
+    def FindOnyomi(self, *readings):
+        """Given a list of onyomi, finds all kanji that match all (if any)."""
+        return self.Search("kanji", self._kq.onyomi.all(readings))
+
     def SearchTypes(self, *types):
-        return self.Search(self._kq.types.any(types))
+        return self.Search("kanji", self._kq.types.any(types))
 
     def SearchExactTypes(self, *types):
-        return self.Search(self._kq.types.all(types))
+        return self.Search("kanji", self._kq.types.all(types))
 
     def Stats(self):
         """Prints statistics."""
-        total = len(self._db)
+        total = len(self._db.table("kanji"))
         print(f"Number of entries: {total}")
         shoukei = len(self.SearchTypes(KanjiType.SHOUKEI))
         shiji = len(self.SearchTypes(KanjiType.SHIJI))

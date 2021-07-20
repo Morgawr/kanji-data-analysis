@@ -12,11 +12,10 @@ from kanjipedia.kanji_db import KanjiDB
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract kanji data from kanjipedia.")
+    parser = argparse.ArgumentParser(
+            description="Extract kanji data from kanjipedia.")
     parser.add_argument("database", type=str, metavar="database",
                         help="Database file where kanji data is stored")
-    #parser.add_argument("url", type=str, metavar="url",
-    #                    help="The kanjipedia kanji url.")
     parser.add_argument("url_file", type=str, metavar="url_file",
                         help=("File containing a list of kanjipedia URLs for "
                               "each kanji + the relevant kanji on each line"))
