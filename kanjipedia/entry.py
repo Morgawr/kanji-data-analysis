@@ -19,6 +19,11 @@ _KP_SUB_KANJI = "subKanji"
 _KP_SAME_BUSHU = "sameBushuList"
 
 
+# This gets rid of the pesky images with relative links
+def _GetRealIMGPath(text):
+    return text.replace('src="/', 'src="' + _KANJIPEDIA_URL + '/')
+
+
 class KanjiType(str, enum.Enum):
     SHIJI = enum.auto()
     SHOUKEI = enum.auto()
@@ -44,6 +49,18 @@ class KanjiType(str, enum.Enum):
                 types.add(k)
         return types
 
+    @staticmethod
+    def StrFromEnum(value):
+        namemap = {
+            KanjiType.SHIJI: "指事",
+            KanjiType.SHOUKEI: "象形",
+            KanjiType.KAII: "会意",
+            KanjiType.KEISEI: "形声",
+            KanjiType.TENCHUU: "転注",
+            KanjiType.KASHA: "仮借",
+        }
+        return namemap[value]
+
 
 class Entry:
 
@@ -56,7 +73,6 @@ class Entry:
         self.semantic_comp = set()
         self.phonetic_comp = None
         self.types = set()
-        #self.raw_text = ""
         self.related_kanji = set()
         self.onyomi = set()
         self.kunyomi = set()
@@ -81,7 +97,6 @@ class Entry:
         entry.semantic_comp = set(data["semantic_comp"])
         entry.phonetic_comp = data["phonetic_comp"]
         entry.types = set([KanjiType(s) for s in data["types"]])
-        #entry.raw_text = data["raw_text"]
         entry.related_kanji = set(data["related_kanji"])
         entry.onyomi = set(data["onyomi"])
         entry.kunyomi = set(data["kunyomi"])
@@ -272,4 +287,58 @@ class Entry:
         print(" Phonetic component: " + str(self.phonetic_comp))
         print(" Semantic component: " + str(self.semantic_comp))
         print(" Related kanji: " + str(self.related_kanji))
+
+    def GenerateHTML(self):
+        """Generates a small HTML <div> snippet of the kanji entry."""
+        output = '<div id="kanji_block">'
+        output += '<div id="oyaji">'
+        output += '<a href="' + self.origin_url + '">' + self.kanji + '</a>'
+        if self.old_form:
+            output += ' ('
+            for k in self.old_form:
+                output += _GetRealIMGPath(k) + ' '
+            output += ')'
+        output += '</div>'
+        output += '<div id="readings">'
+        output += '<p id="onyomi"> Onyomi: '
+        for on in self.onyomi:
+            output += on + '、 '
+        output += '</p>'
+        output += '<p id="kunyomi"> Kunyomi: '
+        for kun in self.kunyomi:
+            output += kun + '、 '
+        output += '</p>'
+        output += '</div>' # /readings
+        output += '<div id="types">'
+        output += '<p id="type"> Type: '
+        for t in self.types:
+            output += KanjiType.StrFromEnum(t) + ' '
+        output += '</p>'
+        output += '<table>'
+        output += '<tr><th>部首</th><th>音符</th><th>意符</th></tr>'
+        output += '<tr>'
+        output += '<td>' + _GetRealIMGPath(self.radical) + '</td>'
+        output += '<td>'
+        if self.semantic_comp:
+            for i in self.semantic_comp:
+                output += _GetRealIMGPath(i) + ' '
+        else:
+            output += 'N/A'
+        output += '</td>'
+        output += '<td>'
+        if self.phonetic_comp:
+            output += _GetRealIMGPath(self.phonetic_comp)
+        else:
+            output += 'N/A'
+        output += '</td>'
+        output += '</tr>'
+        output += '</table>'
+        output += '</div>' # /types
+        if self.related_kanji:
+            output += '<div id="related"> Related Kanji: '
+            for k in self.related_kanji:
+                output += _GetRealIMGPath(k) + ' '
+            output += '</div>'
+        output += '</div>' # /kanji block
+        return BeautifulSoup(output, "html.parser").prettify()
 
