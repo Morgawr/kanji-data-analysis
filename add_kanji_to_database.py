@@ -5,8 +5,6 @@ import sys
 import time
 import traceback
 
-from tinydb import TinyDB, Query
-
 from kanjipedia.entry import Entry as KanjiEntry
 from kanjipedia.kanji_db import KanjiDB
 
