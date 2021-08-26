@@ -21,12 +21,13 @@ def main():
 
     output = "<html>"
     output += "<head>"
-    output += "<title>Morg's POGGERS kanji list</title>"
+    output += "<title>Morg's kanji guide</title>"
     output += "<style> table, th, td { padding: 10px; border: 1px solid black; border-collapse: collapse; } </style>"
     output += "<meta charset='utf-8'/>"
     output += "</head>"
     # TODO(morg): Add proper CSS lmao
     output += "<body>"
+    output += "<p>NOTE: This is still a work-in progress project. Enjoy the kanji list for now :)</p>"
     for k in db.GetAllKanji():
         output += db.GetKanji(k).GenerateHTML()
         output += '<hr />'
