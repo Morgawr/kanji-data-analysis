@@ -81,6 +81,8 @@ class Entry:
         # entries.
         self.onyomi_ext = set()
         self.kunyomi_ext = set()
+        self.onyomi_all = set()
+        self.kunyomi_all = set()
         self.meaning = None
         self.naritachi = None
 
@@ -110,6 +112,8 @@ class Entry:
         entry.onyomi_ext = set(data.get("onyomi_ext", []))
         entry.kunyomi = set(data["kunyomi"])
         entry.kunyomi_ext = set(data.get("kunyomi_ext", []))
+        entry.onyomi_all = set(data.get("onyomi_all", []))
+        entry.kunyomi_all = set(data.get("kunyomi_all", []))
         return entry
 
     def _parse_components(self, naritachi_tag):
@@ -386,6 +390,8 @@ class Entry:
                 "p", {"class": _KP_ONKUN_YOMI})
         if not self._handle_special_readings():
             self._parse_readings(list_tag)
+        self.onyomi_all = self.onyomi.union(self.onyomi_ext)
+        self.kunyomi_all = self.kunyomi.union(self.kunyomi_ext)
 
         bushu_list = soup.find(
                 "ul", {"id": _KP_SAME_BUSHU})
@@ -407,6 +413,8 @@ class Entry:
             "onyomi_ext": list(self.onyomi_ext),
             "kunyomi": list(self.kunyomi),
             "kunyomi_ext": list(self.kunyomi_ext),
+            "onyomi_all": list(self.onyomi_all),
+            "kunyomi_all": list(self.kunyomi_all),
         }
         return kanji_dict
 

@@ -29,20 +29,27 @@ def main():
     # Build total kunyomi set:
     kunyomi = set()
     for kanji in db.GetAllKanji():
-        kunyomi.update(db.GetKanji(kanji).kunyomi)
+        kunyomi.update(db.GetKanji(kanji).kunyomi_all)
     print(f"Done. (Elapsed:{_get_elapsed(start, time.time())}ms)")
 
     print("Retrieving kanji data for each kunyomi...")
     start = time.time()
     kun_kanji_map = {}
     for k in kunyomi:
-        kun_kanji_map[k] = [x.kanji for x in db.FindKunyomi(k)]
+        kun_kanji_map[k] = (set(), set()) # non-ext and ext kanji
+        for entry in db.FindKunyomi(k):
+            if k in entry.kunyomi_ext:
+                kun_kanji_map[k][1].add(entry.kanji)
+            elif k in entry.kunyomi:
+                kun_kanji_map[k][0].add(entry.kanji)
+            else:
+                print(f"WARNING: inconsistent value for {k} on {entry.kanji}")
     print(f"Done. (Elapsed:{_get_elapsed(start, time.time())}ms)")
 
     print("Populating database with new kunyomi data...")
     start = time.time()
     for k, v in kun_kanji_map.items():
-        db.AddOrUpdateKunEntry(k, v)
+        db.AddOrUpdateKunEntry(k, list(v[0]), list(v[1]))
     print(f"Done. (Elapsed:{_get_elapsed(start, time.time())}ms)")
     print(f"All Done! Total time: {_get_elapsed(first_start, time.time())}ms")
 

@@ -17,11 +17,12 @@ class KanjiDB:
         data = entry.GetDataDict()
         self._db.table("kanji").upsert(data, self._kq.kanji == data["kanji"])
 
-    def AddOrUpdateKunEntry(self, kun, kanji_list):
+    def AddOrUpdateKunEntry(self, kun, kanji_list, ext_kanji_list):
         """Given a kunyomi and list of kanji, adds them to the database."""
         self._db.table("kunyomi").upsert({
             "kun": kun,
             "kanji": kanji_list,
+            "kanji_ext": ext_kanji_list,
         }, self._kq.kun == kun)
 
     def Remove(self, entry):
@@ -55,13 +56,18 @@ class KanjiDB:
         Returns:
             A list of kanji Entities (not individual moji).
         """
+        return self.Search("kanji", self._kq.kunyomi_all.all(readings))
+
+    def FindKunyomiRestricted(self, *readings):
+        """Same as FindKunyomi but without ext readings."""
         return self.Search("kanji", self._kq.kunyomi.all(readings))
 
-    def FindSingleKunyomi(self, reading, fast=True):
+    def FindSingleKunyomi(self, reading, ext=True, fast=True):
         """Given a single kunyomi reading, get list of kanji (if any).
 
         Args:
             reading: str, the kunyomi reading.
+            ext: bool, whether or not to include ext readings
             fast: bool, if true, hits the cached pre-built database.
 
         Returns:
@@ -70,22 +76,28 @@ class KanjiDB:
         if fast:
             result = self.Search("kunyomi", self._kq.kun == reading)
             if result:
-                return result[0]["kanji"]
+                if ext:
+                    return result[0]["kanji"] + result[0]["kanji_ext"]
+                else:
+                    return result[0]["kanji"]
             return []
         else:
-            return [k.kanji for k in self.FindKunyomi(reading)]
+            if ext:
+                return [k.kanji for k in self.FindKunyomi(reading)]
+            else:
+                return [k.kanji for k in self.FindKunyomiRestricted(reading)]
 
     def GetAllKunyomi(self):
         """Returns entire kunyomi map from pre-built cache.
 
         Returns:
-            A dictionary of kun readings (str key) + list of kanji (not Entries)
-            that have the given reading.
+            A dictionary of kun readings (str key) + tuple of list of kanji
+            (not Entries) that have the given reading, non-ext and ext.
         """
         result = self.Search("kunyomi", self._kq.kun != "")
         kun_map = {}
         for kun in result:
-            kun_map[kun["kun"]] = kun["kanji"]
+            kun_map[kun["kun"]] = (kun["kanji"], kun["kanji_ext"])
         return kun_map
 
 
@@ -112,6 +124,10 @@ class KanjiDB:
 
     def FindOnyomi(self, *readings):
         """Given a list of onyomi, finds all kanji that match all (if any)."""
+        return self.Search("kanji", self._kq.onyomi_all.all(readings))
+
+    def FindOnyomiRestricted(self, *readings):
+        """Same as FindOnyomi but without 外 readings."""
         return self.Search("kanji", self._kq.onyomi.all(readings))
 
     def SearchTypes(self, *types):
