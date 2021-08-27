@@ -237,6 +237,7 @@ class Entry:
                                 if kun.strip():
                                     self.kunyomi.add(kun.strip())
                         kun_builder = ""
+                        in_ext_mode = True
                         # We are in 外 territory now
                         for child2 in child:
                             if isinstance(child2, NavigableString):
@@ -268,6 +269,23 @@ class Entry:
                                                         str(child3)).replace(
                                                             "・", "").strip())
                                             kun_builder = ""
+        if kun_builder:
+            if in_ext_mode:
+                if "・" in kun_builder:
+                    kuns = kun_builder.split("・")
+                    for k in kuns:
+                        if k.strip():
+                            self.kunyomi_ext.add(k.strip())
+                else:
+                    self.kunyomi_ext.add(kun_builder.strip())
+            else:
+                if "・" in kun_builder:
+                    kuns = kun_builder.split("・")
+                    for k in kuns:
+                        if k.strip():
+                            self.kunyomi.add(k.strip())
+                else:
+                    self.kunyomi.add(kun_builder.strip())
 
     def _handle_special_readings(self):
         # Some kanji are wrong, so we manually fix them :/
