@@ -4,7 +4,7 @@ import re
 import requests
 import sys
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 _KANJIPEDIA_URL = "https://www.kanjipedia.jp"
 
@@ -61,11 +61,12 @@ class KanjiType(str, enum.Enum):
         }
         return namemap[value]
 
-
+# TODO(morg): add support for grade order, JLPT (if any??), jouyou vs non-jouyou
+# TODO(morg): add support for searching/stripping kunyomi readings from kanji
+#             okurigana separator
 class Entry:
 
     def __init__(self):
-        # TODO(morg): maybe also add meaning field
         self.origin_url = None
         self.kanji = None
         self.old_form = set() # Some kanji can have multiple old forms? wtf
@@ -76,6 +77,12 @@ class Entry:
         self.related_kanji = set()
         self.onyomi = set()
         self.kunyomi = set()
+        # The following fields are not supported/are ignored in kanjipedia scraping
+        # entries.
+        self.onyomi_ext = set()
+        self.kunyomi_ext = set()
+        self.meaning = None
+        self.naritachi = None
 
     @staticmethod
     def FromURL(url):
@@ -89,6 +96,7 @@ class Entry:
 
     @staticmethod
     def FromJSON(data):
+        # TODO(morg): support meaning and naritachi import from database
         entry = Entry()
         entry.origin_url = data["origin_url"]
         entry.kanji = data["kanji"]
@@ -99,7 +107,9 @@ class Entry:
         entry.types = set([KanjiType(s) for s in data["types"]])
         entry.related_kanji = set(data["related_kanji"])
         entry.onyomi = set(data["onyomi"])
+        entry.onyomi_ext = set(data.get("onyomi_ext", []))
         entry.kunyomi = set(data["kunyomi"])
+        entry.kunyomi_ext = set(data.get("kunyomi_ext", []))
         return entry
 
     def _parse_components(self, naritachi_tag):
@@ -161,10 +171,99 @@ class Entry:
                     naritachi_tag.contents[1 if parsable else 2]))
 
     def _parse_readings(self, list_tag):
-        for on in re.sub(r"・", " ", list_tag[0].text).split(" "):
-            self.onyomi.add(str(on).strip())
-        for kun in re.sub(r"・", " ", list_tag[1].text).split(" "):
-            self.kunyomi.add(str(kun).strip())
+        in_ext_mode = False
+        def _get_on_reading(element):
+            for on in re.sub(r"・", " ", str(element).strip()).split(" "):
+                if not in_ext_mode:
+                    self.onyomi.add(str(on).strip())
+                else:
+                    self.onyomi_ext.add(str(on).strip())
+        # Loop through each onyomi element
+        for child in list_tag[0]:
+            if isinstance(child, NavigableString):
+                _get_on_reading(child)
+            elif isinstance(child, Tag):
+                if child.name == "span":
+                    for child2 in child:
+                        if isinstance(child2, NavigableString):
+                            _get_on_reading(child2)
+                        elif isinstance(child, Tag):
+                            if child2.name == "img" and "外" in str(child2):
+                                in_ext_mode = True
+                elif child.name == "img" and "外" in str(child):
+                    in_ext_mode = True
+
+        # Let's work on kunyomi now
+        in_ext_mode = False
+        kun_builder = ""
+        for child in list_tag[1]:
+            if isinstance(child, NavigableString):
+                kun_builder += str(child).strip()
+            elif isinstance(child, Tag):
+                if child.name == "span":
+                    if child.get("class") and child.get(
+                            "class")[0] == "txtNormal":
+                        for child2 in child:
+                            if child2.name != "img":
+                                if "・" in str(child2):
+                                    kuns = str(child2).split("・")
+                                    for k in kuns[:-1]:
+                                        if kun_builder.strip():
+                                            kun_builder += "."
+                                        self.kunyomi.add(
+                                                str(kun_builder +
+                                                    str(old).strip()).strip())
+                                        kun_builder = ""
+                                    kun_builder = kuns[-1].strip()
+                                else:
+                                    if "・" in kun_builder:
+                                        kuns = kun_builder.split("・")
+                                        for k in kuns[:-1]:
+                                            if k.strip():
+                                                self.kunyomi.add(k.strip())
+                                        kun_builder = kuns[-1]
+                                    self.kunyomi.add(
+                                            str(kun_builder + "." +
+                                                str(child2)).replace(
+                                                    "・", "").strip())
+                                    kun_builder = ""
+                    elif child.get("style") == "color:#000000":
+                        if kun_builder:
+                            for kun in kun_builder.split("・"):
+                                if kun.strip():
+                                    self.kunyomi.add(kun.strip())
+                        kun_builder = ""
+                        # We are in 外 territory now
+                        for child2 in child:
+                            if isinstance(child2, NavigableString):
+                                kun_builder += str(child2).strip()
+                            elif isinstance(child2, Tag):
+                                if child2.name != "img":
+                                    for child3 in child2:
+                                        if "・" in str(child3):
+                                            kuns = str(child3).split("・")
+                                            for k in kuns[:-1]:
+                                                if kun_builder.strip():
+                                                    kun_builder += "."
+                                                self.kunyomi_ext.add(
+                                                        str(kun_builder +
+                                                            str(old).strip(
+                                                                )).strip())
+                                                kun_builder = ""
+                                            kun_builder = kun[-1]
+                                        else:
+                                            if "・" in kun_builder:
+                                                kuns = kun_builder.split("・")
+                                                for k in kuns[:-1]:
+                                                    if k.strip():
+                                                        self.kunyomi_ext.add(
+                                                                k.strip())
+                                                kun_builder = kuns[-1]
+                                            self.kunyomi_ext.add(
+                                                    str(kun_builder + "." +
+                                                        str(child3)).replace(
+                                                            "・", "").strip())
+                                            kun_builder = ""
 
     def _handle_special_entries(self):
         if self.kanji == "比":
@@ -262,6 +361,7 @@ class Entry:
 
     def GetDataDict(self):
         """Returns a built data dictionary of the entry for storage."""
+        # TODO(morg): support meaning and naritachi
         kanji_dict = {
             "kanji": self.kanji,
             "origin_url": self.origin_url,
@@ -270,26 +370,39 @@ class Entry:
             "semantic_comp": list(self.semantic_comp),
             "phonetic_comp": self.phonetic_comp,
             "types": list(self.types),
-            #"raw_text": self.raw_text,
             "related_kanji": list(self.related_kanji),
             "onyomi": list(self.onyomi),
+            "onyomi_ext": list(self.onyomi_ext),
             "kunyomi": list(self.kunyomi),
+            "kunyomi_ext": list(self.kunyomi_ext),
         }
         return kanji_dict
 
     def Display(self):
         print("Kanji: " + self.kanji)
         print(" Onyomi: " + str(self.onyomi))
+        if self.meaning:
+            print(" Meaning: " + str(self.meaning))
+        if self.naritachi:
+            print(" 成り立ち: " + str(self.naritachi))
+        if self.onyomi_ext:
+            print(" Onyomi Ext: " + str(self.onyomi_ext))
         print(" Kunyomi: " + str(self.kunyomi))
-        print(" Kanji old forms: " + str(self.old_form))
+        if self.kunyomi_ext:
+            print(" Kunymomi Ext: " + str(self.kunyomi_ext))
+        if self.old_form:
+            print(" Kanji old forms: " + str(self.old_form))
         print(" Type: " + str(self.types))
         print(" Radical: " + self.radical)
-        print(" Phonetic component: " + str(self.phonetic_comp))
-        print(" Semantic component: " + str(self.semantic_comp))
+        if self.phonetic_comp:
+            print(" Phonetic component: " + str(self.phonetic_comp))
+        if self.semantic_comp:
+            print(" Semantic component: " + str(self.semantic_comp))
         print(" Related kanji: " + str(self.related_kanji))
 
     def GenerateHTML(self):
         """Generates a small HTML <div> snippet of the kanji entry."""
+        # TODO(morg): support meaning and naritachi fields in web view
         output = '<div id="kanji_block">'
         output += '<div id="oyaji">'
         output += '<a href="' + self.origin_url + '">' + self.kanji + '</a>'
@@ -303,9 +416,17 @@ class Entry:
         output += '<p id="onyomi"> Onyomi: '
         for on in self.onyomi:
             output += on + '、 '
+        if self.onyomi_ext:
+            output += " (外) "
+        for on in self.onyomi_ext:
+            output += on + '、 '
         output += '</p>'
         output += '<p id="kunyomi"> Kunyomi: '
         for kun in self.kunyomi:
+            output += kun + '、 '
+        if self.kunyomi_ext:
+            output += " (外) "
+        for kun in self.kunyomi_ext:
             output += kun + '、 '
         output += '</p>'
         output += '</div>' # /readings
@@ -315,7 +436,7 @@ class Entry:
             output += KanjiType.StrFromEnum(t) + ' '
         output += '</p>'
         output += '<table>'
-        output += '<tr><th>部首</th><th>音符</th><th>意符</th></tr>'
+        output += '<tr><th>部首</th><th>意符</th><th>音符</th></tr>'
         output += '<tr>'
         output += '<td>' + _GetRealIMGPath(self.radical) + '</td>'
         output += '<td>'
