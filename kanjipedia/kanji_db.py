@@ -75,6 +75,20 @@ class KanjiDB:
         else:
             return [k.kanji for k in self.FindKunyomi(reading)]
 
+    def GetAllKunyomi(self):
+        """Returns entire kunyomi map from pre-built cache.
+
+        Returns:
+            A dictionary of kun readings (str key) + list of kanji (not Entries)
+            that have the given reading.
+        """
+        result = self.Search("kunyomi", self._kq.kun != "")
+        kun_map = {}
+        for kun in result:
+            kun_map[kun["kun"]] = kun["kanji"]
+        return kun_map
+
+
     def FindKanjiWithSharedPhonetic(self, kanji):
         """Given an initial kanji, finds all kanji that share 音符 with it."""
         kanji = self.GetKanji(kanji)
