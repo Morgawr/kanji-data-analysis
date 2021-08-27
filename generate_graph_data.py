@@ -17,9 +17,29 @@ class GraphType(enum.Enum):
 
 
 def build_kunmap(db, output_dir):
-    kun_map = [
-            {"kun": kun, "kanji": kanji}
-            for kun, kanji in db.GetAllKunyomi().items()]
+    kun_map = []
+    for kun, (kanji_list, ext_kanji_list) in db.GetAllKunyomi().items():
+        kun_split = kun.split(".")
+        if len(kun_split) == 2:
+            okurigana = kun_split[1]
+            kun_map.append({
+                "kun": kun,
+                "kun_no_okurigana": kun.replace(".", ""),
+                "kanji": kanji_list,
+                "kanji_oku": list(map(lambda x: x+okurigana, kanji_list)),
+                "kanji_ext": ext_kanji_list,
+                "kanji_ext_oku":
+                    list(map(lambda x: x+okurigana, ext_kanji_list)),
+            })
+        else:
+            kun_map.append({
+                "kun": kun,
+                "kun_no_okurigana": kun.replace(".", ""),
+                "kanji": kanji_list,
+                "kanji_oku": kanji_list,
+                "kanji_ext": ext_kanji_list,
+                "kanji_ext_oku": ext_kanji_list,
+            })
     with open(output_dir + "/kun_map.json", "w") as outfile:
         json.dump(kun_map, outfile, ensure_ascii=False)
 
