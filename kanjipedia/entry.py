@@ -212,7 +212,7 @@ class Entry:
                                             kun_builder += "."
                                         self.kunyomi.add(
                                                 str(kun_builder +
-                                                    str(old).strip()).strip())
+                                                    str(k).strip()).strip())
                                         kun_builder = ""
                                     kun_builder = kuns[-1].strip()
                                 else:
@@ -247,10 +247,10 @@ class Entry:
                                                     kun_builder += "."
                                                 self.kunyomi_ext.add(
                                                         str(kun_builder +
-                                                            str(old).strip(
+                                                            str(k).strip(
                                                                 )).strip())
                                                 kun_builder = ""
-                                            kun_builder = kun[-1]
+                                            kun_builder = kuns[-1]
                                         else:
                                             if "・" in kun_builder:
                                                 kuns = kun_builder.split("・")
@@ -264,6 +264,37 @@ class Entry:
                                                         str(child3)).replace(
                                                             "・", "").strip())
                                             kun_builder = ""
+
+    def _handle_special_readings(self):
+        # Some kanji are wrong, so we manually fix them :/
+        if self.kanji == "擬":
+            self.onyomi.add("ギ")
+            self.kunyomi_ext.add("なぞら.える")
+            self.kunyomi_ext.add("はか.る")
+            self.kunyomi_ext.add("まがい")
+            self.kunyomi_ext.add("まどき")
+            self.kunyomi_ext.add("まど.く")
+        elif self.kanji == "絡":
+            self.onyomi.add("ラク")
+            self.kunyomi.add("から.む")
+            self.kunyomi.add("から.まる")
+            self.kunyomi.add("から.める")
+            self.kunyomi_ext.add("まと.う")
+            self.kunyomi_ext.add("から.げる")
+            self.kunyomi_ext.add("つな.がる")
+        elif self.kanji == "果":
+            self.onyomi.add("カ")
+            self.kunyomi.add("は.たす")
+            self.kunyomi.add("は.てる")
+            self.kunyomi.add("は.て")
+            self.kunyomi_ext.add("くだもの")
+            self.kunyomi_ext.add("は.たして")
+            self.kunyomi_ext.add("おお.せる")
+            self.kunyomi_ext.add("はか")
+        else:
+            return False
+        return True
+
 
     def _handle_special_entries(self):
         if self.kanji == "比":
@@ -353,7 +384,8 @@ class Entry:
 
         list_tag = soup.find_all(
                 "p", {"class": _KP_ONKUN_YOMI})
-        self._parse_readings(list_tag)
+        if not self._handle_special_readings():
+            self._parse_readings(list_tag)
 
         bushu_list = soup.find(
                 "ul", {"id": _KP_SAME_BUSHU})
